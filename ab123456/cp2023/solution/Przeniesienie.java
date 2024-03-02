@@ -108,22 +108,19 @@ public class Przeniesienie extends TransefrAbstract{
                 if(czyOstatniWSciezce) {
                     miejsceDoZwolnieniaNaKoniecSciezki.acquire();
                     bariera.await();
-                }
-                else
-                    bariera.await(); // reszta przypadkow czeka
-
-                if(!czyOstatniWSciezce){ // tak samo jak w cyklu
-                    Semaphore semaforNaKomponentPrzenoszony = system.urzadzenia.get(srcId).dajIUsunOpuszczonySemafor(compId);
-                    transfer.prepare();
-                    bariera.await(); // gdy wszystkie transfery wykonaja prepare mozna przejsc dalej
-                    system.urzadzenia.get(destId).dodajOpuszczonySemafor(semaforNaKomponentPrzenoszony, compId);
-                } else if (czyOstatniWSciezce) { // ostatni nie przekazuje dalej semafora ale go zwlanie
                     transfer.prepare();
                     system.urzadzenia.get(destId).dodajOpuszczonySemafor(miejsceDoZwolnieniaNaKoniecSciezki, compId);
                     // przedostatni element w sciezce dostaje semafor ktory na poczatku otrzymal pierwszy element ze
                     // sciezki
                     bariera.await();
                     system.urzadzenia.get(srcId).zwolnionoMiejsce(compId);
+                }
+                else {
+                    bariera.await(); // reszta przypadkow czeka
+                    Semaphore semaforNaKomponentPrzenoszony = system.urzadzenia.get(srcId).dajIUsunOpuszczonySemafor(compId);
+                    transfer.prepare();
+                    bariera.await(); // gdy wszystkie transfery wykonaja prepare mozna przejsc dalej
+                    system.urzadzenia.get(destId).dodajOpuszczonySemafor(semaforNaKomponentPrzenoszony, compId);
                 }
             }
             else {
