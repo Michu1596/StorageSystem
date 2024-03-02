@@ -19,7 +19,6 @@ public final class StorageSystemFactory {
     public static StorageSystem newSystem(
             Map<DeviceId, Integer> deviceTotalSlots,
             Map<ComponentId, DeviceId> componentPlacement) {
-        // FIXME: implement
         if(componentPlacement == null)
             throw new IllegalArgumentException();
         return new StorageSystemImp(deviceTotalSlots, componentPlacement);

@@ -15,7 +15,6 @@ public class Przeniesienie extends TransefrAbstract{
     private boolean czyZwalniacMuteksa;
     private boolean czyWCyklu;
     private boolean czyWSciezce;
-    private boolean czyPierwszyWSciezce;
     private boolean czyOstatniWSciezce;
     private Semaphore miejsceRzeczywiste;
     private Semaphore miejsceDoZwolnieniaNaKoniecSciezki; // pierwszy element sciezki przekazuje ostatniemu miejsce
@@ -79,8 +78,11 @@ public class Przeniesienie extends TransefrAbstract{
         return false;
     }
 
+    // wykonuje transfer za pozwolneniem
     private void wykonaj(boolean pozwolenie){
         try {
+
+            // fragment kodu odpowiedzialny za odopowiednie czekanie
             if(!pozwolenie) {
                 zasowka.await(); // po obudzeniu z zasowki jestesmy w muteksie, ale nie zwalniamy go od razu bo na raz
                 // budzi sie wiele watkow; zwalnia ten co obudzil
@@ -96,6 +98,7 @@ public class Przeniesienie extends TransefrAbstract{
                     system.mutexPoprawnoscPozwolenie.release();
                 }
             }
+
             if(czyWCyklu) {
                 Semaphore semaforNaKomponentPrzenoszony = system.urzadzenia.get(srcId).dajIUsunOpuszczonySemafor(compId);
                 transfer.prepare();
@@ -122,8 +125,8 @@ public class Przeniesienie extends TransefrAbstract{
                     bariera.await();
                     system.urzadzenia.get(srcId).zwolnionoMiejsce(compId);
                 }
-
-            } else {
+            }
+            else {
                 transfer.prepare();
                 system.urzadzenia.get(srcId).zwolnionoMiejsce(compId); // po wykonaniu prepare
                 // "zwalniamy" miejsce na srcDev
@@ -170,7 +173,6 @@ public class Przeniesienie extends TransefrAbstract{
             czyZwalniacMuteksa = false;
         }
         else if (system.transferyDo.containsKey(srcId)) { // sciezka
-            czyPierwszyWSciezce = true;
             DeviceId id = srcId;
             czyWSciezce = true;
             ArrayList<Przeniesienie> sciezka = new ArrayList<>();
@@ -207,7 +209,6 @@ public class Przeniesienie extends TransefrAbstract{
     public boolean sprobujWykonacTransfer() {
         system.wTrakcieOperacji.put(compId, true); // do czasu wykonania transferu komponent nie moze byc poddany innym
         // transferom
-        system.mutexPoprawnoscPozwolenie.tryAcquire(); // TODO usunac
 
         if (czyIstniejeCykl(srcId, 1) ) { // priorytet ma cykl
             czyWCyklu = true;
@@ -231,7 +232,6 @@ public class Przeniesienie extends TransefrAbstract{
                 // zaraz pojawilo wolne miejsce
             }
             else if(system.transferyDo.containsKey(srcId)){ // obudzony transfer tez dziedziczy
-                czyPierwszyWSciezce = true;
                 DeviceId id = srcId;
                 czyWSciezce = true;
                 ArrayList<Przeniesienie> sciezka = new ArrayList<>();

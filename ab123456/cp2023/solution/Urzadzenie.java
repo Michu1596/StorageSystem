@@ -14,7 +14,6 @@ public class Urzadzenie {
     // i nie tylko
     private final LinkedBlockingQueue<Semaphore> podniesioneSemafory; // wolne miejsca; w tej kolejce nie pojawi sie
     // zaden element jesli kolejnka zwroconeOpuszczoneSemafory jest pusta
-    //TODO usunac podniesioneSemafory bo teraz ta kolejka sie nie przyadje
     private final LinkedBlockingQueue<Semaphore> zwroconeOpuszczoneSemafory; // miejsca w trakcie zwalniania
     private final DeviceId devID;
 
