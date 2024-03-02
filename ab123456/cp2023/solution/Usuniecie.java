@@ -6,7 +6,6 @@ import cp2023.exceptions.ComponentIsBeingOperatedOn;
 import cp2023.exceptions.DeviceDoesNotExist;
 import cp2023.exceptions.TransferException;
 
-import java.util.concurrent.Semaphore;
 
 public class Usuniecie extends TransefrAbstract{
     public Usuniecie(StorageSystemImp system, ComponentTransfer transfer){

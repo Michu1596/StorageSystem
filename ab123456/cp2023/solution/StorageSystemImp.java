@@ -27,7 +27,7 @@ public class StorageSystemImp implements StorageSystem {
     // transfery konczace cykl; DeviceId = sourceDev
 
     public StorageSystemImp(Map<DeviceId, Integer> deviceTotalSlots, Map<ComponentId, DeviceId> componentPlacement){
-        deviceTotalSlotsCon = new ConcurrentHashMap<DeviceId, Integer>();
+        deviceTotalSlotsCon = new ConcurrentHashMap<>();
         componentPlacementCon = new ConcurrentHashMap<>();
         wTrakcieOperacji = new ConcurrentHashMap<>();
         ileDodawanCZeka = new ConcurrentHashMap<>();

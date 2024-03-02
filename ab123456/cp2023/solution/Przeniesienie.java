@@ -212,9 +212,7 @@ public class Przeniesienie extends TransefrAbstract{
             system.componentPlacementCon.put(compId, destId); // srcId w mapie podmieniamy na destId
             try {
                 bariera.await(); // czekamy az wszystkie watki zmodyfikuja metadane i zwalaniuamy muteksa
-            } catch (BrokenBarrierException e) {
-                throw new RuntimeException("panic: unexpected thread interruption");
-            } catch (InterruptedException e) {
+            } catch (BrokenBarrierException | InterruptedException e) {
                 throw new RuntimeException("panic: unexpected thread interruption");
             }
             system.mutexPoprawnoscPozwolenie.release();

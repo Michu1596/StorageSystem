@@ -9,19 +9,15 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.Semaphore;
 
 public class Urzadzenie {
-    private final int miejsce;
     private final ConcurrentHashMap<ComponentId, Semaphore> opuszczoneSemafory; // miejsca zajete  w trakcie zwalniania
     // i nie tylko
     private final LinkedBlockingQueue<Semaphore> podniesioneSemafory; // wolne miejsca; w tej kolejce nie pojawi sie
     // zaden element jesli kolejnka zwroconeOpuszczoneSemafory jest pusta
     private final LinkedBlockingQueue<Semaphore> zwroconeOpuszczoneSemafory; // miejsca w trakcie zwalniania
-    private final DeviceId devID;
 
     private Semaphore muteks;
     public Urzadzenie(int wszystkieMiejsca, Map<ComponentId, DeviceId> compPlacement, DeviceId devId){
         muteks = new Semaphore(1);
-        this.devID = devId;
-        miejsce = wszystkieMiejsca;
         opuszczoneSemafory = new ConcurrentHashMap<>();
         podniesioneSemafory = new LinkedBlockingQueue<>();
         zwroconeOpuszczoneSemafory = new LinkedBlockingQueue<>();
@@ -115,7 +111,7 @@ public class Urzadzenie {
 
     /**
      * wywolywane przy znalezieniu cyklu razem z dodajOpuszczonySemafor
-     * @param komp
+     * @param komp komponent
      * @return
      */
     public Semaphore dajIUsunOpuszczonySemafor(ComponentId komp){
@@ -124,7 +120,7 @@ public class Urzadzenie {
 
     /**
      * wywolywane przy znalezieniu cyklu razem z dajIUsunOpuszczonySemafor
-     * @param komp
+     * @param komp komponent
      * @return
      */
     public void dodajOpuszczonySemafor(Semaphore semafor, ComponentId komp){

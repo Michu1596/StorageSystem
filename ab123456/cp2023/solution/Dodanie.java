@@ -12,8 +12,8 @@ public class Dodanie extends TransefrAbstract {
 
     /**
      * sprawdza poprawnosc transferu przy zaozeniu ze jest to transfer dodanie
-     * @param transfer
-     * @param system
+     * @param transfer transfer do przeprowadzenia
+     * @param system system nad ktorym odbywa sie operacja
      * @return true jesli transfer jest poprwany
      * @throws TransferException gdy transfer jest nieporawny
      */
@@ -63,7 +63,6 @@ public class Dodanie extends TransefrAbstract {
     /**
      * w razie pozwolenia obsluguje mapy z rezerwacjami miesjaca, gdy go nie ma powinna zroibc to funkcja dodawanie
      * komponenu. Ta metoda dziala w muteksie!
-     * @param
      * @return czy tranfer jest dozwolony
      */
     @Override
