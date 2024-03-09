@@ -144,9 +144,7 @@ public class Relocation extends TransefrAbstract{
             }
             system.mutex.release();
         }
-        catch (InterruptedException e) {
-            throw new RuntimeException("panic: unexpected thread interruption");
-        } catch (BrokenBarrierException e) {
+        catch (InterruptedException | BrokenBarrierException e) {
             throw new RuntimeException("panic: unexpected thread interruption");
         }
 
