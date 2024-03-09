@@ -71,7 +71,7 @@ public class StorageSystemImp implements StorageSystem {
         // okreslenie typu i poprawnosci transferu
         int typTransferu = 0; //  1 - dodanie komp 2 - przeniesienie komp 3 - usuniecie komp 0 - transfer niepoprawny
         if(transfer.getSourceDeviceId() == null && transfer.getDestinationDeviceId() != null){ // 1 - dodanie komp
-            Dodanie.czyPoprawneDodanie(transfer, this);
+            Addition.isAdditionCorrect(transfer, this);
             typTransferu = 1;
         }
         if(transfer.getSourceDeviceId() != null && transfer.getDestinationDeviceId() != null){ // 2 - przeniesienie komp
@@ -99,7 +99,7 @@ public class StorageSystemImp implements StorageSystem {
             typTransferu = typTransferu(transfer); // moze wyrzucic wyjatek stad V(mutex) w finally
             TransefrAbstract transfer1;
             if(typTransferu == 1) {// dodanie komponentu
-                transfer1 = new Dodanie(this, transfer);
+                transfer1 = new Addition(this, transfer);
                 transfer1.sprobujWykonacTransfer();
             }
             else if (typTransferu == 2){  // przeniesieni
