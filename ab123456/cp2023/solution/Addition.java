@@ -34,15 +34,15 @@ public class Addition extends TransefrAbstract {
     private void componentAddition(boolean permission){
         try {
             if(!permission) {
-                realSlotSem = system.urzadzenia.get(destId).czekajNaMiejsce(compId);
+                realSlotSem = system.devices.get(destId).czekajNaMiejsce(compId);
                 // we will wait for the semaphore to be released by another transfer. However, BEFORE it is released, the
                 // mutex will be released, so that the information about the system can be updated safely
 
-                system.ileDodawanCZeka.put(destId, system.ileDodawanCZeka.get(destId) - 1);
+                system.additionsWaiting.put(destId, system.additionsWaiting.get(destId) - 1);
                 // after we get realSlotSem, we decrease the number of waiting transfers
 
-                if (system.ileDodawanCZeka.get(destId) == 0)
-                    system.ileDodawanCZeka.remove(destId);
+                if (system.additionsWaiting.get(destId) == 0)
+                    system.additionsWaiting.remove(destId);
 
                 system.componentPlacementCon.put(compId, destId);
                 // information about the component placement is updated, so transfer tryin to place the component on the
@@ -51,7 +51,7 @@ public class Addition extends TransefrAbstract {
             transfer.prepare(); // first stage of the transfer is performed
             realSlotSem.acquire(); // waiting for the predecessor to release the semaphore
             transfer.perform(); // final stage of the transfer is performed
-            system.wTrakcieOperacji.put(compId, false);
+            system.duringOperation.put(compId, false);
         }
         catch (InterruptedException e){
             throw new RuntimeException("panic: unexpected thread interruption");
@@ -65,21 +65,21 @@ public class Addition extends TransefrAbstract {
      * @return if transfer was successful
      */
     @Override
-    public boolean sprobujWykonacTransfer(){
-        system.wTrakcieOperacji.put(compId, true);
-        if(system.urzadzenia.get(destId).czyWolne()){
+    public boolean tryPerformTransfer(){
+        system.duringOperation.put(compId, true);
+        if(system.devices.get(destId).czyWolne()){
             system.componentPlacementCon.put(compId, destId);
-            realSlotSem = system.urzadzenia.get(destId).czekajNaMiejsce(compId);
-            system.mutexPoprawnoscPozwolenie.release();
+            realSlotSem = system.devices.get(destId).czekajNaMiejsce(compId);
+            system.mutex.release();
             componentAddition(true);
             return true;
         }
-        if(system.ileDodawanCZeka.containsKey(destId))
-            system.ileDodawanCZeka.put(destId, system.ileDodawanCZeka.get(destId) + 1);
+        if(system.additionsWaiting.containsKey(destId))
+            system.additionsWaiting.put(destId, system.additionsWaiting.get(destId) + 1);
         else
-            system.ileDodawanCZeka.put(destId, 1);
+            system.additionsWaiting.put(destId, 1);
 
-        system.mutexPoprawnoscPozwolenie.release(); // realease the mutex, because thread will wait for the semaphore
+        system.mutex.release(); // realease the mutex, because thread will wait for the semaphore
         // in componentAddition method
         componentAddition(false);
         return false;

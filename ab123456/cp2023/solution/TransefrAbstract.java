@@ -20,9 +20,9 @@ public abstract class TransefrAbstract {
     }
 
     /**
-     * ta metoda podnosi muteksa i mowi czy transfer jest dozowlony. Jesli ttransfer jest dozwolony to przechodzi do
-     * jego wykonania; jesli nie jest dozwolony to oczekuje az bedzei dozwolony i wtedy go wykonuje
-     * @return czy transfer byl dozwolony od razu
+     * this method acuires the mutex and checks if the transfer is allowed. If the transfer is allowed, it performs it;
+     * if it is not allowed, it waits until it is allowed and then performs it
+     * @return if transfer was performed instantly
      */
-    public abstract boolean sprobujWykonacTransfer();
+    public abstract boolean tryPerformTransfer();
 }

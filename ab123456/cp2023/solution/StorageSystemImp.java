@@ -12,111 +12,112 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Semaphore;
 
 public class StorageSystemImp implements StorageSystem {
-    //celowo sa widoczne w calym pakiecie
+    // purposely public in package
     final ConcurrentHashMap<DeviceId, Integer> deviceTotalSlotsCon;
-    final ConcurrentHashMap<DeviceId, Urzadzenie> urzadzenia;
+    final ConcurrentHashMap<DeviceId, Urzadzenie> devices;
     final ConcurrentHashMap<ComponentId, DeviceId> componentPlacementCon;
-    final ConcurrentHashMap<ComponentId, Boolean> wTrakcieOperacji;
-    final Semaphore mutexPoprawnoscPozwolenie;
+    final ConcurrentHashMap<ComponentId, Boolean> duringOperation;
+    final Semaphore mutex;
 
-    final ConcurrentHashMap<DeviceId, Integer> ileDodawanCZeka; // potrzebny do
-    // dziedziczenia sekcji krytycznej. Modyfikowane tylko w klasie Dodanie
-    // rodzaje transferow
+    final ConcurrentHashMap<DeviceId, Integer> additionsWaiting;
 
-    final ConcurrentHashMap<DeviceId, ConcurrentLinkedQueue<Przeniesienie>> transferyDo;
-    // transfery konczace cykl; DeviceId = sourceDev
+    final ConcurrentHashMap<DeviceId, ConcurrentLinkedQueue<Relocation>> transfersTo;
+    // transfers ending a cycle
 
     public StorageSystemImp(Map<DeviceId, Integer> deviceTotalSlots, Map<ComponentId, DeviceId> componentPlacement){
         deviceTotalSlotsCon = new ConcurrentHashMap<>();
         componentPlacementCon = new ConcurrentHashMap<>();
-        wTrakcieOperacji = new ConcurrentHashMap<>();
-        ileDodawanCZeka = new ConcurrentHashMap<>();
-        transferyDo = new ConcurrentHashMap<>();
-        ConcurrentHashMap<DeviceId, Integer> zapelnienieZarezerwowane = new ConcurrentHashMap<>();
-        // mapa pomocnicza do sprawdzania czy nie przekroczono deklarowanego zapelnienia urzadzen
-        urzadzenia = new ConcurrentHashMap<>();
-        mutexPoprawnoscPozwolenie = new Semaphore(1);
-        for(DeviceId dev : deviceTotalSlots.keySet()) {  // iteruje po urzadzeniach
-            zapelnienieZarezerwowane.put(dev, 0); // ustawiamy zapelnienie na 0
-            urzadzenia.put(dev, new Urzadzenie(deviceTotalSlots.get(dev), componentPlacement, dev));
+        duringOperation = new ConcurrentHashMap<>();
+        additionsWaiting = new ConcurrentHashMap<>();
+        transfersTo = new ConcurrentHashMap<>();
+        ConcurrentHashMap<DeviceId, Integer> reservedSlots = new ConcurrentHashMap<>();
+        // temporary map to check if the declared device capacity is not exceeded
+        devices = new ConcurrentHashMap<>();
+        mutex = new Semaphore(1);
+        for(DeviceId dev : deviceTotalSlots.keySet()) {  // iterates over devices
+            reservedSlots.put(dev, 0);
+            devices.put(dev, new Urzadzenie(deviceTotalSlots.get(dev), componentPlacement, dev));
         }
 
         deviceTotalSlotsCon.putAll(deviceTotalSlots);
         componentPlacementCon.putAll(componentPlacement);
-        for(ComponentId komponent : componentPlacement.keySet()) { // iteruje po komponentach
-            wTrakcieOperacji.put(komponent, false);
-            // jesli w componentPlacement wystepuje urzadzenie ktorego nie ma na liscie urzadzen to cos jest nie tak
-            if(!deviceTotalSlots.containsKey(componentPlacement.get(komponent)))
-                throw new IllegalArgumentException("W componentPlacement wystepuje komponenet ktorego nie ma " +
-                        "w deviceTotalSlots");
-            zapelnienieZarezerwowane.put(componentPlacement.get(komponent),
-                    zapelnienieZarezerwowane.get(componentPlacement.get(komponent)) + 1); // ustawienie zapelnienia
-                // ^ zwiekszenie zapelnienia o 1 przy napotkaniu komponentu znajdujacego sie na odpowiednim urzadzeniu
+        for(ComponentId component : componentPlacement.keySet()) { // iterates over components
+            duringOperation.put(component, false);
+            // if the device in componentPlacement is not on the list of devices, something is wrong
+            if(!deviceTotalSlots.containsKey(componentPlacement.get(component)))
+                throw new IllegalArgumentException("in componentPlacement is a component which is not in deviceTotalSlots");
+            reservedSlots.put(componentPlacement.get(component),
+                    reservedSlots.get(componentPlacement.get(component)) + 1); // incrementing the number of components on the device
         }
-        for(Map.Entry<DeviceId, Integer> para : zapelnienieZarezerwowane.entrySet()){
-            if (para.getValue() > deviceTotalSlots.get(para.getKey()))
-                throw new IllegalArgumentException("Liczba" + para.getValue() + " komponentow na urzadzeniu: " +
-                        para.getKey() + " przekracza deklarowana pojemnosc tego urzadzenia: " +
-                        deviceTotalSlots.get(para.getKey()) );
+        for(Map.Entry<DeviceId, Integer> pair : reservedSlots.entrySet()){
+            if (pair.getValue() > deviceTotalSlots.get(pair.getKey()))
+                throw new IllegalArgumentException("Number " + pair.getValue() + " of components on the device: " +
+                        pair.getKey() + " exceeds capacity of this device: " +
+                        deviceTotalSlots.get(pair.getKey()) );
         }
 
     }
 
-    /**okresla typ transferu i stwierdza jego poprawnosc. W przypadu transferu niepoprawnego rzuca odpowiedni
-    * wyjatek. wartosc zwracana przyjmuje wartosci  1 - 3
-    * 1 - dodanie komponentu
-    * 2 - przeniesnie komponentu
-    * 3 - usuniecie komponentu*/
-    private int typTransferu(ComponentTransfer transfer) throws TransferException{
-        // okreslenie typu i poprawnosci transferu
-        int typTransferu = 0; //  1 - dodanie komp 2 - przeniesienie komp 3 - usuniecie komp 0 - transfer niepoprawny
-        if(transfer.getSourceDeviceId() == null && transfer.getDestinationDeviceId() != null){ // 1 - dodanie komp
+    /**
+     * defines the type of transfer and checks its correctness. In case of incorrect transfer, it throws an
+     * appropriate exception. The return value takes values 1 - 3
+     * 1 - adding a component
+     * 2 - moving the component
+     * 3 - removing the component
+     * 0 - transfer is incorrect
+     * */
+    private int transferType(ComponentTransfer transfer) throws TransferException{
+        // defininig the type and correctness of the transfer
+        int ttype = 0;
+        if(transfer.getSourceDeviceId() == null && transfer.getDestinationDeviceId() != null){  // 1 - addition
             Addition.isAdditionCorrect(transfer, this);
-            typTransferu = 1;
+            ttype = 1;
         }
-        if(transfer.getSourceDeviceId() != null && transfer.getDestinationDeviceId() != null){ // 2 - przeniesienie komp
-            Przeniesienie.czyPoprawnePrzeniesienie(transfer, this);
-            typTransferu = 2;
+        if(transfer.getSourceDeviceId() != null && transfer.getDestinationDeviceId() != null){ // 2 - moving
+            Relocation.isRelocationCorrect(transfer, this);
+            ttype = 2;
         }
-        if(transfer.getSourceDeviceId() != null && transfer.getDestinationDeviceId() == null) { // 3 - usuniecie
-            Usuniecie.czyPoprawneUsuniecie(transfer, this);
-            typTransferu = 3;
+        if(transfer.getSourceDeviceId() != null && transfer.getDestinationDeviceId() == null) { // 3 - deletion
+            Removal.isRemovalCorrect(transfer, this);
+            ttype = 3;
         }
 
-        if(typTransferu == 0)
+        if(ttype == 0)
             throw new IllegalTransferType(transfer.getComponentId());
 
 
-        return typTransferu;
+        return ttype;
     }
 
     @Override
     public void execute(ComponentTransfer transfer) throws TransferException {
-        int typTransferu;
+        int ttype;
         try {
-            mutexPoprawnoscPozwolenie.acquire();
-            assert (mutexPoprawnoscPozwolenie.availablePermits() == 0);
-            typTransferu = typTransferu(transfer); // moze wyrzucic wyjatek stad V(mutex) w finally
+            mutex.acquire();
+            assert (mutex.availablePermits() == 0);
+            ttype = transferType(transfer);
+            // can throw an exception, so we release the mutex in finally
             TransefrAbstract transfer1;
-            if(typTransferu == 1) {// dodanie komponentu
+            if(ttype == 1) {// component addition
                 transfer1 = new Addition(this, transfer);
-                transfer1.sprobujWykonacTransfer();
+                transfer1.tryPerformTransfer();
             }
-            else if (typTransferu == 2){  // przeniesieni
-                transfer1 = new Przeniesienie(this, transfer);
-                transfer1.sprobujWykonacTransfer();
+            else if (ttype == 2){  // component relocation
+                transfer1 = new Relocation(this, transfer);
+                transfer1.tryPerformTransfer();
             }
-            else if (typTransferu == 3) { // usuniecie
-                transfer1 = new Usuniecie(this, transfer);
-                transfer1.sprobujWykonacTransfer();
+            else if (ttype == 3) { // component removal
+                transfer1 = new Removal(this, transfer);
+                transfer1.tryPerformTransfer();
             }
 
         }
         catch (InterruptedException e){
             throw new RuntimeException("panic: unexpected thread interruption");
         }
-        catch (TransferException e){ // w razie niepoprawnosci transferu zwalniamy muteksa i rzucamy wyjatek dalej
-            mutexPoprawnoscPozwolenie.release();
+        catch (TransferException e){
+            // in the case of an incorrect transfer, we release the mutex and throw an exception further
+            mutex.release();
             throw e;
         }
     }

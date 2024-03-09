@@ -7,13 +7,13 @@ import cp2023.exceptions.DeviceDoesNotExist;
 import cp2023.exceptions.TransferException;
 
 
-public class Usuniecie extends TransefrAbstract{
-    public Usuniecie(StorageSystemImp system, ComponentTransfer transfer){
+public class Removal extends TransefrAbstract{
+    public Removal(StorageSystemImp system, ComponentTransfer transfer){
         super(system, transfer);
     }
 
-    public static boolean czyPoprawneUsuniecie(ComponentTransfer transfer,
-                                               StorageSystemImp system) throws TransferException{
+    public static boolean isRemovalCorrect(ComponentTransfer transfer,
+                                           StorageSystemImp system) throws TransferException{
         if(!system.componentPlacementCon.containsKey(transfer.getComponentId())) // komp nie istnieje
             throw new ComponentDoesNotExist(transfer.getComponentId(), transfer.getSourceDeviceId());
         if(!system.deviceTotalSlotsCon.containsKey(transfer.getSourceDeviceId())) // czy dev zrodlowy istnieje
@@ -21,37 +21,37 @@ public class Usuniecie extends TransefrAbstract{
         if(!system.componentPlacementCon.get(transfer.getComponentId()).equals(
                 transfer.getSourceDeviceId())) // komponent nie znajduje sie na urzadzeniu zrodlowym
             throw new ComponentDoesNotExist(transfer.getComponentId(), transfer.getSourceDeviceId());
-        if(system.wTrakcieOperacji.get(transfer.getComponentId()))
+        if(system.duringOperation.get(transfer.getComponentId()))
             throw new ComponentIsBeingOperatedOn(transfer.getComponentId());
         return true;
     }
     @Override
-    public boolean sprobujWykonacTransfer(){
-        system.wTrakcieOperacji.put(compId, true);
+    public boolean tryPerformTransfer(){
+        system.duringOperation.put(compId, true);
         system.componentPlacementCon.remove(compId);
-        if (system.ileDodawanCZeka.containsKey(srcId)){
-            system.urzadzenia.get(srcId).miejsceWTrakcieZwalniania(compId); // budzimy dodawanie, ktore dzedziczy
+        if (system.additionsWaiting.containsKey(srcId)){
+            system.devices.get(srcId).miejsceWTrakcieZwalniania(compId); // budzimy dodawanie, ktore dzedziczy
             // sekcje krytyczna wiec nie zwalniamy muteksa
             usuwanieKomponentu();
             return true;
-        } else if (system.transferyDo.containsKey(srcId)) {
-            system.urzadzenia.get(srcId).miejsceWTrakcieZwalniania(compId); // wiemy ze nie obudzimy Dodania
-            Przeniesienie doObudzenia = system.transferyDo.get(srcId).remove();
+        } else if (system.transfersTo.containsKey(srcId)) {
+            system.devices.get(srcId).miejsceWTrakcieZwalniania(compId); // wiemy ze nie obudzimy Dodania
+            Relocation doObudzenia = system.transfersTo.get(srcId).remove();
             doObudzenia.obudz(); // dziedziczy sek kryt wiec nie zwalniamy muteksa
             usuwanieKomponentu();
             return true;
         }
         else {
-            system.urzadzenia.get(srcId).miejsceWTrakcieZwalniania(compId); // zwiekszamy wartosc na semaforze
-            system.mutexPoprawnoscPozwolenie.release();
+            system.devices.get(srcId).miejsceWTrakcieZwalniania(compId); // zwiekszamy wartosc na semaforze
+            system.mutex.release();
             usuwanieKomponentu(); // usuwamy
             return true;
         }
     }
     private void usuwanieKomponentu(){
         transfer.prepare();
-        system.urzadzenia.get(srcId).zwolnionoMiejsce(compId);
+        system.devices.get(srcId).zwolnionoMiejsce(compId);
         transfer.perform();
-        system.wTrakcieOperacji.remove(compId);
+        system.duringOperation.remove(compId);
     }
 }
