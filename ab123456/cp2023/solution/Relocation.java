@@ -10,67 +10,70 @@ import java.util.concurrent.*;
 
 public class Relocation extends TransefrAbstract{
 
-    private final CountDownLatch zasowka;
-    private CyclicBarrier bariera;
-    private boolean czyZwalniacMuteksa;
-    private boolean czyWCyklu;
-    private boolean czyWSciezce;
-    private boolean czyOstatniWSciezce;
-    private Semaphore miejsceRzeczywiste;
-    private Semaphore miejsceDoZwolnieniaNaKoniecSciezki; // pierwszy element sciezki przekazuje ostatniemu miejsce
-    // rzeczywiste na ktore czeka, ostatni element sciezki wrzuca je do destDevice i na nim czeka
+    private final CountDownLatch latch; // this is used to wake up the transfer
+    private CyclicBarrier barrier; // synchronizes the transfers in a cycle
+    private boolean mutexRelease; // if set then transfer should inherit the critical section and release the mutex
+    private boolean inCycle;
+    private boolean inPath;
+    private boolean lastInPath;
+    private Semaphore realSlot;
+    private Semaphore lastInPathSlot;
+    // first element of the path gives the last element the real slot it is waiting for, the last element puts it on
+    // destDevice and waits for it
 
     public static boolean isRelocationCorrect(ComponentTransfer transfer,
                                               StorageSystemImp system) throws TransferException{
         if(!system.componentPlacementCon.containsKey(transfer.getComponentId()))
             throw new ComponentDoesNotExist(transfer.getComponentId(), transfer.getSourceDeviceId());
-        if(!system.deviceTotalSlotsCon.containsKey(transfer.getDestinationDeviceId())) // czy dev docelowy istnieje
+        if(!system.deviceTotalSlotsCon.containsKey(transfer.getDestinationDeviceId())) // if dest device does not exist
             throw new DeviceDoesNotExist(transfer.getDestinationDeviceId());
-        if(!system.deviceTotalSlotsCon.containsKey(transfer.getSourceDeviceId())) // czy dev zrodlowy istnieje
+        if(!system.deviceTotalSlotsCon.containsKey(transfer.getSourceDeviceId())) // if source device does not exist
             throw new DeviceDoesNotExist(transfer.getSourceDeviceId());
         if(system.duringOperation.get(transfer.getComponentId()))
             throw new ComponentIsBeingOperatedOn(transfer.getComponentId());
         if(!system.componentPlacementCon.get(transfer.getComponentId()).equals(
-                transfer.getSourceDeviceId())) // komponent nie znajduje sie na urzadzeniu zrodlowym
+                transfer.getSourceDeviceId())) // component is not on the source device
             throw new ComponentDoesNotExist(transfer.getComponentId(), transfer.getSourceDeviceId());
         if(system.componentPlacementCon.get(transfer.getComponentId()).equals(
-                transfer.getDestinationDeviceId())) // komponent znajduje sie juz na urz docelowym
+                transfer.getDestinationDeviceId())) // component is already on the destination device
             throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), transfer.getSourceDeviceId());
 
         return true;
     }
     public Relocation(StorageSystemImp system, ComponentTransfer transfer){
         super(system, transfer);
-        zasowka = new CountDownLatch(1);
-        czyZwalniacMuteksa = false;
+        latch = new CountDownLatch(1);
+        mutexRelease = false;
     }
-    private boolean czyIstniejeCykl(DeviceId zrodlo, int dlugoscCyklu){
-        if(system.transfersTo.containsKey(zrodlo)){
-            ConcurrentLinkedQueue<Relocation> lista = system.transfersTo.get(zrodlo);
-            for(Iterator<Relocation> itr = lista.iterator(); itr.hasNext(); ){
+    private boolean ifCycle(DeviceId source, int pathLength){
+        if(system.transfersTo.containsKey(source)){
+            ConcurrentLinkedQueue<Relocation> list = system.transfersTo.get(source);
+            for(Iterator<Relocation> itr = list.iterator(); itr.hasNext(); ){
                 Relocation relocation = itr.next();
-                // w tym miejscu caly czas porownujemy ze zrodlem tego samego przeniesienia
+                // checking if the source is the same as the destination
+                // if it is, we have found a cycle
                 if(relocation.srcId.equals(destId) ) {
-                    bariera = new CyclicBarrier(dlugoscCyklu + 1); // gdy stwierdzilismy istnienie cyklu tworzymy
-                    // bariere cykliczna ktora oczekuje na wszystkie watki z cyklu
-                    relocation.bariera = bariera;// bariere trzeba przypisac przed obudzeniem
-                    relocation.czyWCyklu = true;
+                    barrier = new CyclicBarrier(pathLength + 1);
+                    // if the source is the same as the destination, we have found a cycle
+                    // we create a cyclic barrier that is shared by all the threads in the cycle
+                    relocation.barrier = barrier;
+                    relocation.inCycle = true;
 
-                    relocation.zasowka.countDown(); // budzimy transfery pojedynczo
+                    relocation.latch.countDown(); // transfers are woken up one by one
                     itr.remove();
-                    if(lista.isEmpty())
-                        system.transfersTo.remove(zrodlo);
+                    if(list.isEmpty())
+                        system.transfersTo.remove(source);
                     return true;
 
-                } else if (czyIstniejeCykl(relocation.srcId, dlugoscCyklu + 1)) {
-                    // jesli istnieje cykl to mozna obudzic te przeniesienia ktore don naleza
-                    relocation.bariera = bariera; // ustawiamy ta bariere wszystkim watkom
-                    relocation.czyWCyklu = true;
+                } else if (ifCycle(relocation.srcId, pathLength + 1)) {
+                    // if there is a cycle, we can wake up the transfers that belong to it
+                    relocation.barrier = barrier;
+                    relocation.inCycle = true;
 
-                    relocation.zasowka.countDown(); // budzimy transfery pojedynczo
+                    relocation.latch.countDown(); // transfers are woken up one by one
                     itr.remove();
-                    if(lista.isEmpty())
-                        system.transfersTo.remove(zrodlo);
+                    if(list.isEmpty())
+                        system.transfersTo.remove(source);
                     return true;
                 }
             }
@@ -78,67 +81,70 @@ public class Relocation extends TransefrAbstract{
         return false;
     }
 
-    // wykonuje transfer za pozwolneniem
-    private void wykonaj(boolean pozwolenie){
+    // if permission is true, the transfer is allowed to perform instantly
+    private void perform(boolean permission){
         try {
 
-            // fragment kodu odpowiedzialny za odopowiednie czekanie
-            if(!pozwolenie) {
-                zasowka.await(); // po obudzeniu z zasowki jestesmy w muteksie, ale nie zwalniamy go od razu bo na raz
-                // budzi sie wiele watkow; zwalnia ten co obudzil
+            // waiting
+            if(!permission) {
+                latch.await();
+                // after the transfer is woken up, it is in the mutex, but it does not release it immediately, because
+                // many threads are woken up at once; the one that woke them up releases the mutex
                 system.duringOperation.put(compId, true);
-                system.componentPlacementCon.put(compId, destId); // srcId w mapie podmieniamy na destId
-                if(czyWSciezce && czyOstatniWSciezce) { // ostani ze sciezki zwalnia miejsce
-                    System.out.println("    PRZENIESNIE OSTATNIE W SCIEZECE " + this + " JEST W TRAKC ZWLANIANIA MSC NA " + srcId);
-                    system.devices.get(srcId).miejsceWTrakcieZwalniania(compId);
+                system.componentPlacementCon.put(compId, destId); // srcId is replaced by destId in the map
+                if(inPath && lastInPath) { // last on the path frees the slot
+                    system.devices.get(srcId).slotBeingFreed(compId);
                 }
-                bariera.await();
-                if(czyZwalniacMuteksa){ // jesli nie jest w cyklu i zostal obudzony w sekcji krytycznej
-                    // to musi podniesc muteksa
+                barrier.await();
+                if(mutexRelease){
+                    // if it is not in a cycle and it was woken up in the critical section, it has to release the mutex
                     system.mutex.release();
                 }
             }
 
-            if(czyWCyklu) {
-                Semaphore semaforNaKomponentPrzenoszony = system.devices.get(srcId).dajIUsunOpuszczonySemafor(compId);
+            if(inCycle) {
+                Semaphore semForTransferredComp = system.devices.get(srcId).getLoweredSem(compId);
+                // we need to wait for the component transfer to be completed
                 transfer.prepare();
-                bariera.await(); // gdy wszystkie transfery wykonaja prepare mozna przejsc dalej
-                system.devices.get(destId).dodajOpuszczonySemafor(semaforNaKomponentPrzenoszony, compId);
-            } else if (czyWSciezce) {
-                if(czyOstatniWSciezce) {
-                    miejsceDoZwolnieniaNaKoniecSciezki.acquire();
-                    bariera.await();
+                barrier.await();
+                // when all the transfers have completed the prepare stage, we can move on
+                system.devices.get(destId).addLoweredSem(semForTransferredComp, compId);
+            } else if (inPath) {
+                if(lastInPath) {
+                    lastInPathSlot.acquire();
+                    barrier.await();
                     transfer.prepare();
-                    system.devices.get(destId).dodajOpuszczonySemafor(miejsceDoZwolnieniaNaKoniecSciezki, compId);
-                    // przedostatni element w sciezce dostaje semafor ktory na poczatku otrzymal pierwszy element ze
-                    // sciezki
-                    bariera.await();
-                    system.devices.get(srcId).zwolnionoMiejsce(compId);
+                    system.devices.get(destId).addLoweredSem(lastInPathSlot, compId);
+                    // penultimate element in the path gets the semaphore that was given to the first element in the path
+
+                    barrier.await();
+                    system.devices.get(srcId).slotFreed(compId);
                 }
                 else {
-                    bariera.await(); // reszta przypadkow czeka
-                    Semaphore semaforNaKomponentPrzenoszony = system.devices.get(srcId).dajIUsunOpuszczonySemafor(compId);
+                    barrier.await(); // other cases are waiting for the last element in the path
+                    Semaphore relocatedCompSem = system.devices.get(srcId).getLoweredSem(compId);
                     transfer.prepare();
-                    bariera.await(); // gdy wszystkie transfery wykonaja prepare mozna przejsc dalej
-                    system.devices.get(destId).dodajOpuszczonySemafor(semaforNaKomponentPrzenoszony, compId);
+                    barrier.await(); // when all the transfers have completed the prepare stage, we can move on
+                    system.devices.get(destId).addLoweredSem(relocatedCompSem, compId);
                 }
             }
             else {
                 transfer.prepare();
-                system.devices.get(srcId).zwolnionoMiejsce(compId); // po wykonaniu prepare
-                // "zwalniamy" miejsce na srcDev
-                miejsceRzeczywiste.acquire(); // transfer przed wykonaniem perform musi sie upewnic
-                // ze na urzadzeniu faktycznie znajduje sie miejsce
+                system.devices.get(srcId).slotFreed(compId); // after prepare, we "free" the slot on srcDev
+
+                realSlot.acquire();
+                // before the transfer is performed, it has to make sure that there is a slot on the device
             }
 
             transfer.perform();
 
-            system.duringOperation.put(compId, false); // to nie musi byc w muteksie; transfery na tym komponencie moga
-            // zaczac sie wykonywac nawet gdy reszta transferow z cyklu jest w trakcie wykonania
+            system.duringOperation.put(compId, false);
+            // this needn't be in the mutex; transfers on this component can start even when the rest of the transfers
+            // in the cycle are being performed
 
             system.mutex.acquire();
             if (system.transfersTo.containsKey(destId)) {
-                system.transfersTo.get(destId).remove(this); // czyscimy mape
+                system.transfersTo.get(destId).remove(this); // we remove the transfer from the list of transfers
                 if(system.transfersTo.get(destId).isEmpty())
                     system.transfersTo.remove(destId);
             }
@@ -151,130 +157,129 @@ public class Relocation extends TransefrAbstract{
     }
 
     /**
-     * metoda do budzenia pojedynczego transferu nie bedacego czescia cyklu
+     * method to wake up a single transfer that is not part of a cycle
      */
     public void obudz(){
-        bariera = new CyclicBarrier(1); // nie musi czekac na inne watki bo jest sam
-        czyZwalniacMuteksa = true; // odziedziczyl sekcje krytyczna
-        czyWCyklu = false;
-        miejsceRzeczywiste = system.devices.get(destId).czekajNaMiejsce(compId); // wiemy ze nie bedziemy czekac bo
-        // obudzilo nas usuwanie komponenetu
+        barrier = new CyclicBarrier(1);
+        // does not have to wait for other threads, because it is the only one
+        mutexRelease = true; // inherited the critical section
+        inCycle = false;
+        realSlot = system.devices.get(destId).czekajNaMiejsce(compId);
+        // we know that we will not have to wait, because we were woken up by the removal of the component
 
         system.duringOperation.put(compId, true);
-        system.componentPlacementCon.put(compId, destId); // srcId w mapie podmieniamy na destId
+        system.componentPlacementCon.put(compId, destId); // srcId is replaced by destId in the map
 
-        if(system.additionsWaiting.containsKey(srcId)) { // w pierwszej kolejnosci sprawdzamy czy nie ma dodawania
-            system.devices.get(srcId).miejsceWTrakcieZwalniania(compId);
-            czyZwalniacMuteksa = false;
+        if(system.additionsWaiting.containsKey(srcId)) { // in the first place we check if there is an addition waiting
+            system.devices.get(srcId).slotBeingFreed(compId);
+            mutexRelease = false;
         }
-        else if (system.transfersTo.containsKey(srcId)) { // sciezka
+        else if (system.transfersTo.containsKey(srcId)) { // path
             DeviceId id = srcId;
-            czyWSciezce = true;
-            ArrayList<Relocation> sciezka = new ArrayList<>();
+            inPath = true;
+            ArrayList<Relocation> path = new ArrayList<>();
             Relocation temp;
             while (system.transfersTo.containsKey(id)) {
                 temp = system.transfersTo.get(id).remove();
-                sciezka.add(temp);
+                path.add(temp);
 
                 if (system.transfersTo.get(id).isEmpty())
                     system.transfersTo.remove(id);
 
                 id = temp.destId;
             }
-            bariera = new CyclicBarrier(sciezka.size() + 1);
-            sciezka.get(sciezka.size()-1).czyOstatniWSciezce = true; // ustawiam ostatni na sciezce
-            sciezka.get(sciezka.size()-1).miejsceDoZwolnieniaNaKoniecSciezki = miejsceRzeczywiste;
-            system.devices.get(destId).dajIUsunOpuszczonySemafor(compId); // od teraz tym miejscem zajmuje sie
-            // ostatni element sciezki
-            for(Relocation relocation : sciezka){
-                relocation.czyWSciezce = true;
-                relocation.bariera = bariera;
-                relocation.czyWCyklu = false;
-                relocation.zasowka.countDown();
+            barrier = new CyclicBarrier(path.size() + 1);
+            path.get(path.size()-1).lastInPath = true;
+            path.get(path.size()-1).lastInPathSlot = realSlot;
+            system.devices.get(destId).getLoweredSem(compId);
+            for(Relocation relocation : path){
+                relocation.inPath = true;
+                relocation.barrier = barrier;
+                relocation.inCycle = false;
+                relocation.latch.countDown();
             }
         }
         else {
-            system.devices.get(srcId).miejsceWTrakcieZwalniania(compId);
+            system.devices.get(srcId).slotBeingFreed(compId);
         }
 
-        zasowka.countDown();
+        latch.countDown();
     }
 
     @Override
     public boolean tryPerformTransfer() {
-        system.duringOperation.put(compId, true); // do czasu wykonania transferu komponent nie moze byc poddany innym
-        // transferom
+        system.duringOperation.put(compId, true);
+        // till the transfer is performed, the component cannot be subject to other transfers
 
-        if (czyIstniejeCykl(srcId, 1) ) { // priorytet ma cykl
-            czyWCyklu = true;
-            system.componentPlacementCon.put(compId, destId); // srcId w mapie podmieniamy na destId
+        if (ifCycle(srcId, 1) ) { // cycle is priority
+            inCycle = true;
+            system.componentPlacementCon.put(compId, destId); // srcId is replaced by destId in the map
             try {
-                bariera.await(); // czekamy az wszystkie watki zmodyfikuja metadane i zwalaniuamy muteksa
+                barrier.await();
+                // we wait for all the threads to modify the metadata and release the mutex
             } catch (BrokenBarrierException | InterruptedException e) {
                 throw new RuntimeException("panic: unexpected thread interruption");
             }
             system.mutex.release();
-            wykonaj(true);
+            perform(true);
             return true;
         } else if (system.devices.get(destId).czyWolne()) {
-            czyWCyklu = false;
-            miejsceRzeczywiste = system.devices.get(destId).czekajNaMiejsce(compId);
-            system.componentPlacementCon.put(compId, destId); // srcId w mapie podmieniamy na destId
-            if(system.additionsWaiting.containsKey(srcId)) { // jesli czeka dodawnaie to dziedziczy sekcje krytyczna
-                system.devices.get(srcId).miejsceWTrakcieZwalniania(compId); // informujemy ze na urzadzeniu srcId
-                // zaraz pojawilo wolne miejsce
+            inCycle = false;
+            realSlot = system.devices.get(destId).czekajNaMiejsce(compId);
+            system.componentPlacementCon.put(compId, destId); // srcId is replaced by destId in the map
+            if(system.additionsWaiting.containsKey(srcId)) { // if addition transfer waits, it inherits the critical section
+                system.devices.get(srcId).slotBeingFreed(compId);
+                // we inform that there is a free slot on the source device
             }
-            else if(system.transfersTo.containsKey(srcId)){ // obudzony transfer tez dziedziczy
+            else if(system.transfersTo.containsKey(srcId)){ // awaken transfer inherits the critical section
                 DeviceId id = srcId;
-                czyWSciezce = true;
-                ArrayList<Relocation> sciezka = new ArrayList<>();
+                inPath = true;
+                ArrayList<Relocation> path = new ArrayList<>();
                 Relocation temp;
                 while (system.transfersTo.containsKey(id)) {
                     temp = system.transfersTo.get(id).remove();
-                    sciezka.add(temp);
+                    path.add(temp);
 
                     if (system.transfersTo.get(id).isEmpty())
                         system.transfersTo.remove(id);
 
                     id = temp.destId;
                 }
-                bariera = new CyclicBarrier(sciezka.size() + 1);
-                sciezka.get(sciezka.size()-1).czyOstatniWSciezce = true; // ustawiam ostatni na sciezce
-                sciezka.get(sciezka.size()-1).miejsceDoZwolnieniaNaKoniecSciezki = miejsceRzeczywiste;
-                system.devices.get(destId).dajIUsunOpuszczonySemafor(compId); // od teraz tym miejscem zajmuje sie
-                // ostatni element sciezki
-                for(Relocation relocation : sciezka){
-                    relocation.czyWSciezce = true;
-                    relocation.bariera = bariera;
-                    relocation.czyWCyklu = false;
-                    relocation.zasowka.countDown();
+                barrier = new CyclicBarrier(path.size() + 1);
+                path.get(path.size()-1).lastInPath = true;
+                path.get(path.size()-1).lastInPathSlot = realSlot;
+                system.devices.get(destId).getLoweredSem(compId);
+                for(Relocation relocation : path){
+                    relocation.inPath = true;
+                    relocation.barrier = barrier;
+                    relocation.inCycle = false;
+                    relocation.latch.countDown();
                 }
             }
             else{
-                system.devices.get(srcId).miejsceWTrakcieZwalniania(compId); // informujemy ze na urzadzeniu srcId
-                // zaraz pojawilo wolne miejsce
+                system.devices.get(srcId).slotBeingFreed(compId); // we inform that there is a free slot on the source device
                 system.mutex.release();
             }
-            bariera = new CyclicBarrier(1); // nie musi sie zatrzymywac na barierze
-            wykonaj(true);
+            barrier = new CyclicBarrier(1); // doesn't have to wait for other threads, because it is the only one
+            perform(true);
             return true;
 
-        } else { // cykl nie istnieje
+        } else { // cycle does not exist and there is no free slot
             if (system.transfersTo.containsKey(destId))
                 system.transfersTo.get(destId).add(this);
             else {
-                ConcurrentLinkedQueue<Relocation> nowa = new ConcurrentLinkedQueue<>();
-                nowa.add(this);
-                system.transfersTo.put(destId, nowa);
+                ConcurrentLinkedQueue<Relocation> newQueue = new ConcurrentLinkedQueue<>();
+                newQueue.add(this);
+                system.transfersTo.put(destId, newQueue);
             }
             system.mutex.release();
-            wykonaj(false); // wieszamy go na zasowce
+            perform(false); // we have to wait for the slot
             return false;
         }
     }
 
     @Override
     public String toString(){
-        return "Z " + srcId + " DO " + destId + " " + compId;
+        return "FROM " + srcId + " TO " + destId + " " + compId;
     }
 }

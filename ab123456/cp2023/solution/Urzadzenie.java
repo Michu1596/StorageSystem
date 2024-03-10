@@ -75,7 +75,7 @@ public class Urzadzenie {
      * momencie uzyskania pozwolenia
      * @param komponent komponent ktorego dotyczy operacja zwalaniana
      */
-    public void miejsceWTrakcieZwalniania(ComponentId komponent){
+    public void slotBeingFreed(ComponentId komponent){
         zwroconeOpuszczoneSemafory.add(opuszczoneSemafory.get(komponent));
         System.out.println("    KOMPONENT " + komponent + " JEST W TRAKCIE ZWALNIANIA MSC");
     }
@@ -85,7 +85,7 @@ public class Urzadzenie {
      * wywolaniu funkcji prepare
      * @param komponent komponent ktorego dotyczy operacja zwalaniana
      */
-    public void zwolnionoMiejsce(ComponentId komponent){
+    public void slotFreed(ComponentId komponent){
         try {
             muteks.acquire();
             Semaphore zwolnioneMiejsce = opuszczoneSemafory.get(komponent);
@@ -114,7 +114,7 @@ public class Urzadzenie {
      * @param komp komponent
      * @return
      */
-    public Semaphore dajIUsunOpuszczonySemafor(ComponentId komp){
+    public Semaphore getLoweredSem(ComponentId komp){
         return opuszczoneSemafory.remove(komp);
     }
 
@@ -123,7 +123,7 @@ public class Urzadzenie {
      * @param komp komponent
      * @return
      */
-    public void dodajOpuszczonySemafor(Semaphore semafor, ComponentId komp){
+    public void addLoweredSem(Semaphore semafor, ComponentId komp){
         opuszczoneSemafory.put(komp, semafor);
     }
 }

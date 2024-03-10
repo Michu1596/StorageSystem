@@ -30,19 +30,19 @@ public class Removal extends TransefrAbstract{
         system.duringOperation.put(compId, true);
         system.componentPlacementCon.remove(compId);
         if (system.additionsWaiting.containsKey(srcId)){
-            system.devices.get(srcId).miejsceWTrakcieZwalniania(compId); // budzimy dodawanie, ktore dzedziczy
+            system.devices.get(srcId).slotBeingFreed(compId); // budzimy dodawanie, ktore dzedziczy
             // sekcje krytyczna wiec nie zwalniamy muteksa
             usuwanieKomponentu();
             return true;
         } else if (system.transfersTo.containsKey(srcId)) {
-            system.devices.get(srcId).miejsceWTrakcieZwalniania(compId); // wiemy ze nie obudzimy Dodania
+            system.devices.get(srcId).slotBeingFreed(compId); // wiemy ze nie obudzimy Dodania
             Relocation doObudzenia = system.transfersTo.get(srcId).remove();
             doObudzenia.obudz(); // dziedziczy sek kryt wiec nie zwalniamy muteksa
             usuwanieKomponentu();
             return true;
         }
         else {
-            system.devices.get(srcId).miejsceWTrakcieZwalniania(compId); // zwiekszamy wartosc na semaforze
+            system.devices.get(srcId).slotBeingFreed(compId); // zwiekszamy wartosc na semaforze
             system.mutex.release();
             usuwanieKomponentu(); // usuwamy
             return true;
@@ -50,7 +50,7 @@ public class Removal extends TransefrAbstract{
     }
     private void usuwanieKomponentu(){
         transfer.prepare();
-        system.devices.get(srcId).zwolnionoMiejsce(compId);
+        system.devices.get(srcId).slotFreed(compId);
         transfer.perform();
         system.duringOperation.remove(compId);
     }
