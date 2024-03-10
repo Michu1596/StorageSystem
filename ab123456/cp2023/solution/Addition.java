@@ -34,7 +34,7 @@ public class Addition extends TransefrAbstract {
     private void componentAddition(boolean permission){
         try {
             if(!permission) {
-                realSlotSem = system.devices.get(destId).czekajNaMiejsce(compId);
+                realSlotSem = system.devices.get(destId).waitForSlot(compId);
                 // we will wait for the semaphore to be released by another transfer. However, BEFORE it is released, the
                 // mutex will be released, so that the information about the system can be updated safely
 
@@ -67,9 +67,9 @@ public class Addition extends TransefrAbstract {
     @Override
     public boolean tryPerformTransfer(){
         system.duringOperation.put(compId, true);
-        if(system.devices.get(destId).czyWolne()){
+        if(system.devices.get(destId).isFree()){
             system.componentPlacementCon.put(compId, destId);
-            realSlotSem = system.devices.get(destId).czekajNaMiejsce(compId);
+            realSlotSem = system.devices.get(destId).waitForSlot(compId);
             system.mutex.release();
             componentAddition(true);
             return true;

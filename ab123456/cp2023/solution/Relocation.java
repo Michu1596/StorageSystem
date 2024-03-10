@@ -164,7 +164,7 @@ public class Relocation extends TransefrAbstract{
         // does not have to wait for other threads, because it is the only one
         mutexRelease = true; // inherited the critical section
         inCycle = false;
-        realSlot = system.devices.get(destId).czekajNaMiejsce(compId);
+        realSlot = system.devices.get(destId).waitForSlot(compId);
         // we know that we will not have to wait, because we were woken up by the removal of the component
 
         system.duringOperation.put(compId, true);
@@ -223,9 +223,9 @@ public class Relocation extends TransefrAbstract{
             system.mutex.release();
             perform(true);
             return true;
-        } else if (system.devices.get(destId).czyWolne()) {
+        } else if (system.devices.get(destId).isFree()) {
             inCycle = false;
-            realSlot = system.devices.get(destId).czekajNaMiejsce(compId);
+            realSlot = system.devices.get(destId).waitForSlot(compId);
             system.componentPlacementCon.put(compId, destId); // srcId is replaced by destId in the map
             if(system.additionsWaiting.containsKey(srcId)) { // if addition transfer waits, it inherits the critical section
                 system.devices.get(srcId).slotBeingFreed(compId);

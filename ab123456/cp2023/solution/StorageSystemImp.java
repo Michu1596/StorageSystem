@@ -14,7 +14,7 @@ import java.util.concurrent.Semaphore;
 public class StorageSystemImp implements StorageSystem {
     // purposely public in package
     final ConcurrentHashMap<DeviceId, Integer> deviceTotalSlotsCon;
-    final ConcurrentHashMap<DeviceId, Urzadzenie> devices;
+    final ConcurrentHashMap<DeviceId, Device> devices;
     final ConcurrentHashMap<ComponentId, DeviceId> componentPlacementCon;
     final ConcurrentHashMap<ComponentId, Boolean> duringOperation;
     final Semaphore mutex;
@@ -36,7 +36,7 @@ public class StorageSystemImp implements StorageSystem {
         mutex = new Semaphore(1);
         for(DeviceId dev : deviceTotalSlots.keySet()) {  // iterates over devices
             reservedSlots.put(dev, 0);
-            devices.put(dev, new Urzadzenie(deviceTotalSlots.get(dev), componentPlacement, dev));
+            devices.put(dev, new Device(deviceTotalSlots.get(dev), componentPlacement, dev));
         }
 
         deviceTotalSlotsCon.putAll(deviceTotalSlots);
