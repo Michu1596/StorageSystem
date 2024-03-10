@@ -14,12 +14,12 @@ public class Removal extends TransefrAbstract{
 
     public static boolean isRemovalCorrect(ComponentTransfer transfer,
                                            StorageSystemImp system) throws TransferException{
-        if(!system.componentPlacementCon.containsKey(transfer.getComponentId())) // komp nie istnieje
+        if(!system.componentPlacementCon.containsKey(transfer.getComponentId())) // component does not exist
             throw new ComponentDoesNotExist(transfer.getComponentId(), transfer.getSourceDeviceId());
-        if(!system.deviceTotalSlotsCon.containsKey(transfer.getSourceDeviceId())) // czy dev zrodlowy istnieje
+        if(!system.deviceTotalSlotsCon.containsKey(transfer.getSourceDeviceId())) // if source device does not exist
             throw new DeviceDoesNotExist(transfer.getSourceDeviceId());
         if(!system.componentPlacementCon.get(transfer.getComponentId()).equals(
-                transfer.getSourceDeviceId())) // komponent nie znajduje sie na urzadzeniu zrodlowym
+                transfer.getSourceDeviceId())) // component is not on the source device
             throw new ComponentDoesNotExist(transfer.getComponentId(), transfer.getSourceDeviceId());
         if(system.duringOperation.get(transfer.getComponentId()))
             throw new ComponentIsBeingOperatedOn(transfer.getComponentId());
@@ -30,25 +30,24 @@ public class Removal extends TransefrAbstract{
         system.duringOperation.put(compId, true);
         system.componentPlacementCon.remove(compId);
         if (system.additionsWaiting.containsKey(srcId)){
-            system.devices.get(srcId).slotBeingFreed(compId); // budzimy dodawanie, ktore dzedziczy
-            // sekcje krytyczna wiec nie zwalniamy muteksa
-            usuwanieKomponentu();
+            system.devices.get(srcId).slotBeingFreed(compId); // we awake the addition which inherits the critical section
+            componentRemoval();
             return true;
         } else if (system.transfersTo.containsKey(srcId)) {
-            system.devices.get(srcId).slotBeingFreed(compId); // wiemy ze nie obudzimy Dodania
-            Relocation doObudzenia = system.transfersTo.get(srcId).remove();
-            doObudzenia.obudz(); // dziedziczy sek kryt wiec nie zwalniamy muteksa
-            usuwanieKomponentu();
+            system.devices.get(srcId).slotBeingFreed(compId); // addition will not be awakened
+            Relocation toBeAwakened = system.transfersTo.get(srcId).remove();
+            toBeAwakened.wakeUp();
+            componentRemoval();
             return true;
         }
         else {
-            system.devices.get(srcId).slotBeingFreed(compId); // zwiekszamy wartosc na semaforze
+            system.devices.get(srcId).slotBeingFreed(compId); // semaphore is increased
             system.mutex.release();
-            usuwanieKomponentu(); // usuwamy
+            componentRemoval();
             return true;
         }
     }
-    private void usuwanieKomponentu(){
+    private void componentRemoval(){
         transfer.prepare();
         system.devices.get(srcId).slotFreed(compId);
         transfer.perform();

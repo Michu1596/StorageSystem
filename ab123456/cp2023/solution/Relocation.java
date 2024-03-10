@@ -159,7 +159,7 @@ public class Relocation extends TransefrAbstract{
     /**
      * method to wake up a single transfer that is not part of a cycle
      */
-    public void obudz(){
+    public void wakeUp(){
         barrier = new CyclicBarrier(1);
         // does not have to wait for other threads, because it is the only one
         mutexRelease = true; // inherited the critical section
